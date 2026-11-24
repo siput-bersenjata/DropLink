@@ -162,38 +162,83 @@ Database menggunakan serverless SQL (Postgres / Turso SQLite).
 
 ---
 
-## 6. Desain Antarmuka (UI/UX) & Komponen Modular
+## 6. Desain Antarmuka (UI/UX) - Referensi Desain Pengguna
 
-Pengguna akan mengirimkan detail desain visual nanti. Oleh karena itu, struktur komponen frontend dibangun modular sehingga mudah disesuaikan dengan desain visual yang akan diberikan:
+Berdasarkan referensi desain visual yang dikirimkan oleh pengguna:
 
-### 6.1 Halaman Utama (`/`)
-*   **Header / Navbar:** Logo "Drop Link", indikator status kuota / informasi limit (20MB img, 50MB video/doc).
-*   **Hero & Dropzone Container:**
-    *   Area drag-and-drop interaktif dengan animasi hover/drag-over.
-    *   Input file manual melalui tombol "Pilih File".
-    *   Informasi format yang didukung & batas ukuran.
-*   **Control Panel:**
-    *   Selector Masa Simpan: Radio / Dropdown (1 Bulan, 3 Bulan, 6 Bulan).
-    *   Widget Cloudflare Turnstile (muncul sebelum tombol submit).
-    *   Tombol "Simpan & Buat Link".
-*   **Progress Modal / Card:**
-    *   Tampilan persentase progress upload (0% - 100%) dan estimasi kecepatan.
-*   **Success Card / Modal:**
-    *   Tautan publik yang siap disalin (contoh: `https://drop-link.vercel.app/f/7k9xQ2mP`).
-    *   QR Code untuk scan via smartphone.
-    *   Informasi masa aktif file.
-    *   Tautan / Tombol "Hapus File Sekarang" (disertai kunci delete rahasia).
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│  [✈] DropLink                Beranda • Cara Kerja • FAQ • Tentang   [Masuk]  │
+├────────────────────────────────────────────────────────────────────────┤
+│                                                                        │
+│                Bagikan File dengan Link.                               │
+│                   Cepat. Aman. Gratis.                                 │
+│      Seret & lepas file kamu di sini. Tidak perlu daftar.              │
+│                     Link otomatis dibuat.                              │
+│                                                                        │
+│        ┌ - - - - - - - - - - - - - - - - - - - - - - - - - - - ┐       │
+│        │                        [☁↑]                           │       │
+│        │                 Seret file ke sini                    │       │
+│        │                        atau                           │       │
+│        │              [ Klik untuk Upload File ]               │       │
+│        └ - - - - - - - - - - - - - - - - - - - - - - - - - - - ┘       │
+│                                                                        │
+│   Mendukung PDF, Gambar, Dokumen, Video — Maks 50MB • Gratis & Tanpa Akun │
+│                                                                        │
+│        [ Opsi Masa Aktif: (o) 1 Bulan   ( ) 3 Bulan   ( ) 6 Bulan ]    │
+│        [             Widget Cloudflare Turnstile Captcha           ]    │
+│                                                                        │
+│    ┌──────────────┐       ┌──────────────┐       ┌──────────────┐      │
+│    │     [🛡]      │       │     [⏱]      │       │     [🔗]      │      │
+│    │  Sederhana   │       │  Tanpa Akun  │       │ Link Instan  │      │
+│    │ Cukup seret, │       │ Tidak perlu  │       │ Link siap    │      │
+│    │  dapat link. │       │    login.    │       │  dibagikan.  │      │
+│    └──────────────┘       └──────────────┘       └──────────────┘      │
+│                                                                        │
+│   Privasi terjaga • File terhapus otomatis setelah 1-6 bulan •         │
+│               © 2024 DropLink • Kebijakan Privasi                      │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+### 6.1 Elemen Visual & Tipografi
+1.  **Navbar**:
+    *   Logo: Ikon pesawat kertas / kirim warna biru dalam wadah rounded-xl, teks **DropLink** tebal hitam/dark slate.
+    *   Menu navigasi: `Beranda`, `Cara Kerja`, `FAQ`, `Tentang`.
+    *   Tombol kanan: `Masuk` (pill button biru khas DropLink).
+2.  **Hero Section**:
+    *   Headline: **Bagikan File dengan Link. Cepat. Aman. Gratis.** (font tebal, modern, ukuran responsif 36px–56px).
+    *   Subheadline: "Seret & lepas file kamu di sini. Tidak perlu daftar. Link otomatis dibuat." (warna teks abu-abu elegan).
+3.  **Dropzone Card**:
+    *   Garis putus-putus biru lembut (`border-2 border-dashed border-blue-400 bg-white rounded-3xl p-8 md:p-12 shadow-sm`).
+    *   Ikon: Awan biru dengan panah ke atas (`w-14 h-14 bg-blue-600 rounded-2xl flex items-center justify-center text-white shadow-md`).
+    *   Teks utama: **Seret file ke sini** (tebal 24px–28px).
+    *   Pemisah: "atau" (teks halus abu-abu).
+    *   Tombol aksi: **Klik untuk Upload File** (pill button `bg-blue-600 hover:bg-blue-700 text-white font-semibold px-8 py-3 rounded-full transition-all`).
+    *   Keterangan batas: "Mendukung PDF, Gambar, Dokumen, Video — Gambar maks 20MB, Video/Dokumen maks 50MB • Gratis & Tanpa Akun".
+4.  **Kontrol Tambahan**:
+    *   Pilihan masa aktif terintegrasi rapi: `1 Bulan` (default), `3 Bulan`, `6 Bulan`.
+    *   Widget Cloudflare Turnstile yang terpasang mulus di atas tombol final submit.
+    *   Progress bar upload yang menunjukkan kecepatan dan persentase secara real-time saat file dikirim ke Cloudflare R2.
+5.  **3 Kolom Fitur Unggulan (Value Props)**:
+    *   **Sederhana** (Ikon Perisai): "Cukup seret, dapatkan link, selesai."
+    *   **Tanpa Akun** (Ikon Jam): "Tidak perlu login atau registrasi."
+    *   **Link Instan** (Ikon Tautan): "Link langsung siap dibagikan."
+6.  **Footer**:
+    *   "Privasi terjaga • File terhapus otomatis setelah 1-6 bulan • © 2024 DropLink • Kebijakan Privasi"
+
+---
 
 ### 6.2 Halaman Pratinjau & Unduh (`/f/[id]`)
-*   **Media Viewer:**
-    *   *Gambar:* Lightbox pratinjau resolusi tinggi.
-    *   *Video:* HTML5 Video Player kustom (Play, Pause, Volume, Fullscreen) dengan kemampuan streaming langsung dari R2.
-    *   *Dokumen:* Ikon dokumen, ukuran file, format, dan opsi pratinjau teks/PDF bila didukung browser.
-*   **Detail File:** Nama asli file, ukuran dalam MB, tanggal diunggah, hitung mundur kadaluarsa (*countdown timer*: misal "Kedaluwarsa dalam 28 hari 4 jam").
-*   **Aksi:**
-    *   Tombol "Download File".
-    *   Tombol "Salin Link".
-    *   Tombol "Hapus File" (hanya aktif jika pengunggah memegang delete token atau tersimpan di `localStorage` pengunggah).
+Mengikuti bahasa desain yang sama (DropLink style):
+*   Header dengan logo DropLink.
+*   Kartu pratinjau utama di tengah dengan latar belakang putih bersih dan border halus.
+*   Pratinjau media:
+    *   Gambar: Lightbox/viewer gambar beresolusi tajam.
+    *   Video: Pemutar HTML5 video responsif dengan kontrol play, pause, timeline, dan volume.
+    *   Dokumen: Ikon dokumen yang sesuai dengan tipe file (PDF, Doc, Zip, dll.), nama asli file, dan ukuran MB.
+*   Indikator status: "File ini akan kedaluwarsa pada [Tanggal] ([X] hari lagi)".
+*   Tombol Aksi Utama: Tombol biru pill **Download File** dan tombol outline **Salin Link**.
+*   Tombol Aksi Pemilik: Tombol merah halus **Hapus File Sekarang** jika token uploader cocok.
 
 ---
 
