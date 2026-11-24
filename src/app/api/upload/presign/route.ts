@@ -6,6 +6,7 @@ import {
 } from '@/lib/validation/file-validator';
 import { parseClientDeviceInfo, extractClientIp } from '@/lib/audit/device-logger';
 import { checkRateLimit } from '@/lib/security/rate-limiter';
+import { detectBot } from '@/lib/security/bot-detector';
 import { verifyTurnstileToken } from '@/lib/security/turnstile';
 import { generatePresignedUploadUrl } from '@/lib/storage/r2-client';
 import { createFileRecord } from '@/lib/db/repository';
@@ -23,28 +24,63 @@ export async function POST(request: Request) {
       files: rawFiles,
       retentionMonths,
       turnstileToken,
+      honeypot,
+      timeTakenMs,
       clientInfo,
     } = body;
 
-    // 1. Rate limiting
+    const userAgent = request.headers.get('user-agent') || '';
     const ip = extractClientIp(request.headers);
+
+    // 1. Invisible Bot Detection (Honeypot, User-Agent, Automation Timing)
+    const botCheck = detectBot({
+      ip,
+      userAgent,
+      honeypot,
+      timeTakenMs,
+      headers: request.headers,
+    });
+
+    if (botCheck.isBot) {
+      return NextResponse.json(
+        {
+          error: 'BOT_DETECTED',
+          isBotBlocked: true,
+          message:
+            'Akses diblokir: Terdeteksi aktivitas script atau bot otomatis. Harap gunakan browser standar.',
+          reason: botCheck.reason,
+        },
+        { status: 403 }
+      );
+    }
+
+    // Optional Turnstile verification if secret key is explicitly set in production
+    if (process.env.TURNSTILE_SECRET_KEY && turnstileToken) {
+      const isCaptchaValid = await verifyTurnstileToken(turnstileToken, ip);
+      if (!isCaptchaValid) {
+        return NextResponse.json(
+          {
+            error: 'BOT_DETECTED',
+            isBotBlocked: true,
+            message: 'Verifikasi keamanan bot gagal. Harap muat ulang halaman.',
+          },
+          { status: 403 }
+        );
+      }
+    }
+
+    // 2. IP Rate limiting
     const rateCheck = checkRateLimit(ip);
     if (!rateCheck.allowed) {
       return NextResponse.json(
         {
-          error:
-            'Batas upload tercapai (maksimal 10 upload per jam per IP). Silakan coba lagi nanti.',
+          error: 'RATE_LIMIT_EXCEEDED',
+          isBotBlocked: true,
+          isRateLimit: true,
+          message:
+            'Batas upload tercapai (maksimal 10 upload per jam per IP). Silakan coba lagi nanti untuk mencegah abuse.',
         },
         { status: 429 }
-      );
-    }
-
-    // 2. Turnstile Verification
-    const isCaptchaValid = await verifyTurnstileToken(turnstileToken, ip);
-    if (!isCaptchaValid) {
-      return NextResponse.json(
-        { error: 'Verifikasi captcha (Turnstile) diperlukan atau tidak valid.' },
-        { status: 403 }
       );
     }
 

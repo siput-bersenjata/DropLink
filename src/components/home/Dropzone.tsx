@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
   UploadCloud,
   FileText,
@@ -13,7 +13,6 @@ import {
   Plus,
   ShieldCheck,
 } from 'lucide-react';
-import { Turnstile } from '@marsidev/react-turnstile';
 import { upload as vercelBlobUpload } from '@vercel/blob/client';
 import {
   validateBatch,
@@ -25,13 +24,20 @@ import {
 import { saveToHistory } from '@/lib/storage/history-store';
 import RetentionSelector from './RetentionSelector';
 import SuccessCard, { SuccessUploadedFile } from './SuccessCard';
+import BotBlockedModal from '@/components/security/BotBlockedModal';
 
 export default function Dropzone() {
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [retention, setRetention] = useState<RetentionMonths>(1);
-  const [turnstileToken, setTurnstileToken] = useState<string>('');
   const [isDragging, setIsDragging] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  // Bot detection & Security states
+  const [honeypot, setHoneypot] = useState<string>('');
+  const [pageLoadTime, setPageLoadTime] = useState<number>(Date.now());
+  const [botBlockedModalOpen, setBotBlockedModalOpen] = useState(false);
+  const [botBlockedMessage, setBotBlockedMessage] = useState<string>('');
+  const [isRateLimitBlocked, setIsRateLimitBlocked] = useState(false);
 
   // Uploading state
   const [isUploading, setIsUploading] = useState(false);
@@ -49,6 +55,10 @@ export default function Dropzone() {
   } | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    setPageLoadTime(Date.now());
+  }, []);
 
   const addFilesToSelection = useCallback((newFiles: FileList | File[]) => {
     setErrorMsg(null);
@@ -148,14 +158,9 @@ export default function Dropzone() {
       return;
     }
 
-    if (!turnstileToken) {
-      setErrorMsg('Harap selesaikan verifikasi keamanan captcha di bawah.');
-      return;
-    }
-
     setIsUploading(true);
     setUploadProgress(0);
-    setUploadStatusText('Menyiapkan server & enkripsi link...');
+    setUploadStatusText('Memeriksa keamanan & menyiapkan link...');
     setErrorMsg(null);
 
     try {
@@ -167,8 +172,9 @@ export default function Dropzone() {
         typeof Intl !== 'undefined'
           ? Intl.DateTimeFormat().resolvedOptions().timeZone
           : 'UTC';
+      const timeTakenMs = Date.now() - pageLoadTime;
 
-      // 1. Presign batch upload
+      // 1. Presign batch upload with invisible bot detection
       const presignRes = await fetch('/api/upload/presign', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -179,7 +185,8 @@ export default function Dropzone() {
             mimeType: f.type || 'application/octet-stream',
           })),
           retentionMonths: retention,
-          turnstileToken,
+          honeypot,
+          timeTakenMs,
           clientInfo: {
             screenResolution,
             timezone,
@@ -187,9 +194,20 @@ export default function Dropzone() {
         }),
       });
 
-      if (!presignRes.ok) {
-        const errData = await presignRes.json();
-        throw new Error(errData.error || 'Gagal memulai proses upload.');
+      const presignData = await presignRes.json();
+
+      // Check if backend bot detection or rate limit blocked the request
+      if (!presignRes.ok || presignData.isBotBlocked) {
+        if (presignData.isBotBlocked || presignRes.status === 403 || presignRes.status === 429) {
+          setIsRateLimitBlocked(Boolean(presignData.isRateLimit || presignRes.status === 429));
+          setBotBlockedMessage(
+            presignData.message ||
+              'Sistem keamanan mendeteksi aktivitas mencurigakan atau bot otomatis. Akses diblokir.'
+          );
+          setBotBlockedModalOpen(true);
+          return;
+        }
+        throw new Error(presignData.error || 'Gagal memulai proses upload.');
       }
 
       const {
@@ -197,11 +215,9 @@ export default function Dropzone() {
         deleteToken,
         publicUrl,
         expiresAt,
-        totalSize,
-        files: presignedFiles,
         useVercelBlob,
         presignedUrl,
-      } = await presignRes.json();
+      } = presignData;
 
       const uploadedFilesUrls: Array<{ filename: string; blobUrl: string }> = [];
 
@@ -358,6 +374,18 @@ export default function Dropzone() {
         onDragLeave={onDragLeave}
         onDrop={onDrop}
       >
+        {/* Invisible Honeypot Trap for automated bots/scrapers */}
+        <input
+          type="text"
+          name="_hp_security_check"
+          value={honeypot}
+          onChange={(e) => setHoneypot(e.target.value)}
+          tabIndex={-1}
+          autoComplete="off"
+          className="hidden"
+          aria-hidden="true"
+        />
+
         <input
           ref={fileInputRef}
           type="file"
@@ -449,25 +477,6 @@ export default function Dropzone() {
           />
         </div>
 
-        {/* Cloudflare Turnstile */}
-        <div className="mt-5 flex justify-center">
-          <Turnstile
-            siteKey={
-              process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY || '1x00000000000000000000AA'
-            }
-            onSuccess={(token) => {
-              setTurnstileToken(token);
-              setErrorMsg(null);
-            }}
-            onError={() => {
-              setErrorMsg('Verifikasi captcha gagal. Muat ulang halaman.');
-            }}
-            onExpire={() => {
-              setTurnstileToken('');
-            }}
-          />
-        </div>
-
         {/* Upload Progress Indicator */}
         {isUploading && (
           <div className="mt-5 text-left bg-blue-50/70 border border-blue-100 rounded-2xl p-4 shadow-sm animate-in fade-in">
@@ -517,6 +526,14 @@ export default function Dropzone() {
           </button>
         </div>
       </div>
+
+      {/* Bot Blocked Warning Pop-up Modal */}
+      <BotBlockedModal
+        isOpen={botBlockedModalOpen}
+        onClose={() => setBotBlockedModalOpen(false)}
+        message={botBlockedMessage}
+        isRateLimit={isRateLimitBlocked}
+      />
     </div>
   );
 }

@@ -13,33 +13,59 @@ describe('API Route Handlers', () => {
     resetRateLimiterForTesting();
   });
 
-  it('should reject presign request if turnstile token is missing', async () => {
-    const req = new Request('http://localhost:3000/api/upload/presign', {
+  it('should reject presign request if bot is detected via honeypot or bot user-agent', async () => {
+    // 1. Honeypot filled
+    const req1 = new Request('http://localhost:3000/api/upload/presign', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+      },
       body: JSON.stringify({
         filename: 'foto.jpg',
         size: 1024,
         retentionMonths: 1,
-        turnstileToken: '',
+        honeypot: 'spam-bot-value',
       }),
     });
 
-    const res = await presignHandler(req);
-    expect(res.status).toBe(403);
-    const data = await res.json();
-    expect(data.error).toContain('captcha');
+    const res1 = await presignHandler(req1);
+    expect(res1.status).toBe(403);
+    const data1 = await res1.json();
+    expect(data1.isBotBlocked).toBe(true);
+    expect(data1.error).toBe('BOT_DETECTED');
+
+    // 2. Automated scraper User-Agent
+    const req2 = new Request('http://localhost:3000/api/upload/presign', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'User-Agent': 'python-requests/2.28.0',
+      },
+      body: JSON.stringify({
+        filename: 'foto.jpg',
+        size: 1024,
+        retentionMonths: 1,
+      }),
+    });
+
+    const res2 = await presignHandler(req2);
+    expect(res2.status).toBe(403);
+    const data2 = await res2.json();
+    expect(data2.isBotBlocked).toBe(true);
   });
 
   it('should reject presign request if file validation fails (e.g. image over 20MB)', async () => {
     const req = new Request('http://localhost:3000/api/upload/presign', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+      },
       body: JSON.stringify({
         filename: 'huge_image.png',
         size: 25 * 1024 * 1024,
         retentionMonths: 1,
-        turnstileToken: 'valid-test-token',
       }),
     });
 
@@ -54,13 +80,13 @@ describe('API Route Handlers', () => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
         'x-forwarded-for': '110.23.45.67',
       },
       body: JSON.stringify({
         filename: 'dokumen-rahasia.pdf',
-        size: 5 * 1024 * 1024,
+        size: 2 * 1024 * 1024,
         retentionMonths: 3,
-        turnstileToken: 'valid-test-token',
         clientInfo: {
           screenResolution: '1920x1080',
           timezone: 'Asia/Jakarta',
