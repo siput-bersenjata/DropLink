@@ -6,7 +6,7 @@ export const dynamic = 'force-dynamic';
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { fileId, blobUrl } = body;
+    const { fileId, blobUrl, fileUrls } = body;
 
     if (!fileId) {
       return NextResponse.json(
@@ -23,7 +23,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const activated = await activateFile(fileId, blobUrl);
+    const activated = await activateFile(fileId, blobUrl, fileUrls);
     if (!activated) {
       return NextResponse.json(
         { error: 'File tidak ditemukan.' },

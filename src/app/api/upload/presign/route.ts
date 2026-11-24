@@ -1,18 +1,30 @@
 import { NextResponse } from 'next/server';
 import { nanoid } from 'nanoid';
-import { validateFile, calculateExpiryDate } from '@/lib/validation/file-validator';
+import {
+  validateBatch,
+  calculateExpiryDate,
+} from '@/lib/validation/file-validator';
 import { parseClientDeviceInfo, extractClientIp } from '@/lib/audit/device-logger';
 import { checkRateLimit } from '@/lib/security/rate-limiter';
 import { verifyTurnstileToken } from '@/lib/security/turnstile';
 import { generatePresignedUploadUrl } from '@/lib/storage/r2-client';
 import { createFileRecord } from '@/lib/db/repository';
+import { FileItemRecord } from '@/lib/db/schema';
 
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { filename, size, mimeType, retentionMonths, turnstileToken, clientInfo } = body;
+    const {
+      filename,
+      size,
+      mimeType,
+      files: rawFiles,
+      retentionMonths,
+      turnstileToken,
+      clientInfo,
+    } = body;
 
     // 1. Rate limiting
     const ip = extractClientIp(request.headers);
@@ -36,16 +48,22 @@ export async function POST(request: Request) {
       );
     }
 
-    // 3. File Validation
-    const validation = validateFile({ filename, size, mimeType });
-    if (!validation.valid || !validation.category) {
+    // 3. Normalize single vs multi file input
+    const fileListToValidate: Array<{ filename: string; size: number; mimeType?: string }> =
+      rawFiles && Array.isArray(rawFiles) && rawFiles.length > 0
+        ? rawFiles
+        : [{ filename, size, mimeType }];
+
+    // 4. File Validation
+    const batchValidation = validateBatch(fileListToValidate);
+    if (!batchValidation.valid) {
       return NextResponse.json(
-        { error: validation.error || 'File tidak valid.' },
+        { error: batchValidation.error || 'File tidak valid.' },
         { status: 400 }
       );
     }
 
-    // 4. Calculate Expiry
+    // 5. Calculate Expiry
     const months = Number(retentionMonths) || 1;
     let expiresAt: Date;
     try {
@@ -54,33 +72,47 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: err.message }, { status: 400 });
     }
 
-    // 5. Parse Device & IP Audit Info
+    // 6. Parse Device & IP Audit Info
     const auditRecord = parseClientDeviceInfo(request.headers, clientInfo);
 
-    // 6. Generate Short File ID & Cloudflare R2 Key
+    // 7. Generate Short File ID
     const fileId = nanoid(10);
-    // Sanitize filename for S3 key storage
-    const safeFilename = filename.replace(/[^a-zA-Z0-9._-]/g, '_');
-    const r2Key = `uploads/${fileId}/${safeFilename}`;
-
-    // 7. Generate Cloudflare R2 Presigned S3 PUT URL
-    const presignedUrl = await generatePresignedUploadUrl(
-      r2Key,
-      mimeType || 'application/octet-stream',
-      600 // 10 minutes
-    );
-
     const useVercelBlob = Boolean(process.env.BLOB_READ_WRITE_TOKEN);
 
-    // 8. Create Pending Record in DB
+    // 8. Prepare File Items
+    const fileItems: FileItemRecord[] = [];
+    for (let i = 0; i < batchValidation.items.length; i++) {
+      const item = batchValidation.items[i];
+      const safeFilename = item.filename.replace(/[^a-zA-Z0-9._-]/g, '_');
+      const r2Key = `uploads/${fileId}/${safeFilename}`;
+      fileItems.push({
+        id: nanoid(8),
+        filename: item.filename,
+        fileSize: item.size,
+        mimeType: item.mimeType,
+        category: item.category,
+        r2Key,
+      });
+    }
+
+    const primaryItem = fileItems[0];
+    const presignedUrl = await generatePresignedUploadUrl(
+      primaryItem.r2Key,
+      primaryItem.mimeType,
+      600
+    );
+
+    // 9. Create Pending Record in DB
     const { file, deleteToken } = await createFileRecord(
       {
         id: fileId,
-        filename,
-        fileSize: size,
-        mimeType: mimeType || 'application/octet-stream',
-        category: validation.category,
-        r2Key,
+        filename: primaryItem.filename,
+        fileSize: primaryItem.fileSize,
+        mimeType: primaryItem.mimeType,
+        category: primaryItem.category,
+        r2Key: primaryItem.r2Key,
+        files: fileItems,
+        totalSize: batchValidation.totalSize,
         retentionMonths: months,
         expiresAt,
       },
@@ -96,7 +128,16 @@ export async function POST(request: Request) {
       deleteToken,
       publicUrl,
       expiresAt: file.expiresAt,
+      totalSize: file.totalSize,
+      fileCount: fileItems.length,
       category: file.category,
+      files: fileItems.map((f) => ({
+        id: f.id,
+        filename: f.filename,
+        fileSize: f.fileSize,
+        category: f.category,
+        r2Key: f.r2Key,
+      })),
     });
   } catch (error: any) {
     console.error('Error in /api/upload/presign:', error);

@@ -156,6 +156,86 @@ export function validateFile(input: ValidateFileInput): ValidationResult {
   };
 }
 
+export interface BatchItemValidation {
+  filename: string;
+  size: number;
+  mimeType: string;
+  category: FileCategory;
+}
+
+export interface ValidateBatchResult {
+  valid: boolean;
+  totalSize: number;
+  fileCount: number;
+  items: BatchItemValidation[];
+  error?: string;
+}
+
+export function validateBatch(
+  files: Array<{ filename: string; size: number; mimeType?: string }>
+): ValidateBatchResult {
+  if (!files || files.length === 0) {
+    return {
+      valid: false,
+      totalSize: 0,
+      fileCount: 0,
+      items: [],
+      error: 'Pilih minimal satu file untuk diunggah.',
+    };
+  }
+
+  if (files.length > 20) {
+    return {
+      valid: false,
+      totalSize: 0,
+      fileCount: files.length,
+      items: [],
+      error: 'Maksimal 20 file dalam satu tautan (batch upload).',
+    };
+  }
+
+  let totalSize = 0;
+  const items: BatchItemValidation[] = [];
+
+  for (const f of files) {
+    const singleValidation = validateFile(f);
+    if (!singleValidation.valid || !singleValidation.category) {
+      return {
+        valid: false,
+        totalSize: 0,
+        fileCount: files.length,
+        items: [],
+        error: `File "${f.filename}": ${singleValidation.error || 'Format tidak didukung.'}`,
+      };
+    }
+
+    totalSize += f.size;
+    items.push({
+      filename: f.filename,
+      size: f.size,
+      mimeType: f.mimeType || 'application/octet-stream',
+      category: singleValidation.category,
+    });
+  }
+
+  if (totalSize > FILE_LIMITS.ABSOLUTE_MAX_SIZE) {
+    return {
+      valid: false,
+      totalSize,
+      fileCount: files.length,
+      items: [],
+      error: `Total ukuran file (${formatBytes(totalSize)}) melebihi batas maksimal 50MB. Kurangi file atau ukuran.`,
+    };
+  }
+
+  return {
+    valid: true,
+    totalSize,
+    fileCount: files.length,
+    items,
+  };
+}
+
 export function calculateExpiryDate(retentionMonths: number): Date {
   if (!ALLOWED_RETENTION_MONTHS.includes(retentionMonths as RetentionMonths)) {
     throw new Error(

@@ -30,10 +30,10 @@ export default function RetentionSelector({
               type="button"
               disabled={disabled}
               onClick={() => onChange(months)}
-              className={`py-2 px-3 rounded-xl text-xs sm:text-sm font-semibold transition-all border text-center ${
+              className={`py-2 px-3 rounded-xl text-xs sm:text-sm font-bold transition-all border text-center ${
                 isSelected
-                  ? 'bg-blue-600 text-white border-blue-600 shadow-sm shadow-blue-500/20'
-                  : 'bg-white text-slate-700 border-slate-200 hover:border-blue-300 hover:bg-slate-50'
+                  ? 'bg-blue-600 text-white border-blue-600 shadow-[0_3px_0_0_#1d4ed8,0_6px_12px_rgba(37,99,235,0.25)] scale-[1.02]'
+                  : 'bg-white text-slate-700 border-slate-200/90 hover:border-blue-300 hover:bg-slate-50 shadow-sm active:translate-y-0.5'
               } ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
               {months} Bulan

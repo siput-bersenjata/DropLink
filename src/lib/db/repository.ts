@@ -53,6 +53,19 @@ export async function createFileRecord(
 
   const file: FileRecord = {
     ...input,
+    totalSize: input.totalSize ?? input.fileSize,
+    files: input.files && input.files.length > 0
+      ? input.files
+      : [
+          {
+            id: '1',
+            filename: input.filename,
+            fileSize: input.fileSize,
+            mimeType: input.mimeType,
+            category: input.category,
+            r2Key: input.r2Key,
+          },
+        ],
     status: 'pending',
     deleteTokenHash,
     downloadCount: 0,
@@ -86,7 +99,11 @@ export async function createFileRecord(
   return { file, deleteToken };
 }
 
-export async function activateFile(id: string, blobUrl?: string): Promise<boolean> {
+export async function activateFile(
+  id: string,
+  blobUrl?: string,
+  fileUrls?: Array<{ filename: string; blobUrl: string }>
+): Promise<boolean> {
   const store = getStore();
   let file = await getFileById(id);
   if (!file) return false;
@@ -95,6 +112,19 @@ export async function activateFile(id: string, blobUrl?: string): Promise<boolea
   if (blobUrl) {
     file.r2Key = blobUrl;
   }
+
+  if (fileUrls && fileUrls.length > 0 && file.files) {
+    const urlMap = new Map(fileUrls.map((u) => [u.filename, u.blobUrl]));
+    file.files = file.files.map((item) => ({
+      ...item,
+      blobUrl: urlMap.get(item.filename) || item.blobUrl || item.r2Key,
+      r2Key: urlMap.get(item.filename) || item.r2Key,
+    }));
+  } else if (blobUrl && file.files && file.files.length === 1) {
+    file.files[0].blobUrl = blobUrl;
+    file.files[0].r2Key = blobUrl;
+  }
+
   store.files.set(id, file);
 
   await persistMetadata(id, file);
@@ -104,7 +134,23 @@ export async function activateFile(id: string, blobUrl?: string): Promise<boolea
 export async function getFileById(id: string): Promise<FileRecord | null> {
   const store = getStore();
   let file = store.files.get(id);
-  if (file) return file;
+  if (file) {
+    if (!file.files || file.files.length === 0) {
+      file.files = [
+        {
+          id: '1',
+          filename: file.filename,
+          fileSize: file.fileSize,
+          mimeType: file.mimeType,
+          category: file.category,
+          r2Key: file.r2Key,
+          blobUrl: file.r2Key,
+        },
+      ];
+      file.totalSize = file.fileSize;
+    }
+    return file;
+  }
 
   // If not found in current serverless container memory, fetch from persistent cloud storage!
   if (process.env.BLOB_READ_WRITE_TOKEN) {
@@ -116,6 +162,21 @@ export async function getFileById(id: string): Promise<FileRecord | null> {
           const data = await res.json();
           const fetchedFile: FileRecord = {
             ...data,
+            totalSize: data.totalSize ?? data.fileSize,
+            files:
+              data.files && data.files.length > 0
+                ? data.files
+                : [
+                    {
+                      id: '1',
+                      filename: data.filename,
+                      fileSize: data.fileSize,
+                      mimeType: data.mimeType,
+                      category: data.category,
+                      r2Key: data.r2Key,
+                      blobUrl: data.r2Key,
+                    },
+                  ],
             createdAt: new Date(data.createdAt),
             expiresAt: new Date(data.expiresAt),
           };

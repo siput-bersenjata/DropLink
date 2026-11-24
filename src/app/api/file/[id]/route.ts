@@ -37,19 +37,45 @@ export async function GET(
     }
 
     await incrementDownloadCount(id);
-    const downloadUrl = getPublicDownloadUrl(file.r2Key, file.filename);
+
+    const filesList = (file.files && file.files.length > 0
+      ? file.files
+      : [
+          {
+            id: '1',
+            filename: file.filename,
+            fileSize: file.fileSize,
+            mimeType: file.mimeType,
+            category: file.category,
+            r2Key: file.r2Key,
+            blobUrl: file.r2Key,
+          },
+        ]
+    ).map((f) => ({
+      id: f.id,
+      filename: f.filename,
+      fileSize: f.fileSize,
+      mimeType: f.mimeType,
+      category: f.category,
+      downloadUrl: getPublicDownloadUrl(f.blobUrl || f.r2Key, f.filename),
+    }));
+
+    const primaryDownloadUrl = filesList[0]?.downloadUrl || getPublicDownloadUrl(file.r2Key, file.filename);
 
     return NextResponse.json({
       id: file.id,
       filename: file.filename,
       fileSize: file.fileSize,
+      totalSize: file.totalSize || file.fileSize,
       mimeType: file.mimeType,
       category: file.category,
       status: file.status,
+      fileCount: filesList.length,
+      files: filesList,
       downloadCount: file.downloadCount,
       createdAt: file.createdAt,
       expiresAt: file.expiresAt,
-      downloadUrl,
+      downloadUrl: primaryDownloadUrl,
     });
   } catch (error) {
     console.error('Error in /api/file/[id]:', error);
