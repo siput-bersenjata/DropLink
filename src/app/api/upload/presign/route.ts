@@ -7,6 +7,8 @@ import { verifyTurnstileToken } from '@/lib/security/turnstile';
 import { generatePresignedUploadUrl } from '@/lib/storage/r2-client';
 import { createFileRecord } from '@/lib/db/repository';
 
+export const dynamic = 'force-dynamic';
+
 export async function POST(request: Request) {
   try {
     const body = await request.json();

@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { getExpiredFiles, markFilesExpired } from '@/lib/db/repository';
 import { deleteObjectFromR2 } from '@/lib/storage/r2-client';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(request: Request) {
   try {
     // Optional cron secret verification for Vercel Cron

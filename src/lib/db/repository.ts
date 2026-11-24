@@ -113,7 +113,7 @@ export async function getExpiredFiles(): Promise<FileRecord[]> {
   const now = new Date();
   const expired: FileRecord[] = [];
 
-  for (const file of store.files.values()) {
+  for (const file of Array.from(store.files.values())) {
     if (file.status === 'active' && file.expiresAt <= now) {
       expired.push(file);
     }

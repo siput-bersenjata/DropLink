@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { deleteFileWithToken } from '@/lib/db/repository';
 import { deleteObjectFromR2 } from '@/lib/storage/r2-client';
 
+export const dynamic = 'force-dynamic';
+
 export async function POST(
   request: Request,
   { params }: { params: { id: string } }
