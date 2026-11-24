@@ -71,7 +71,7 @@ export default function DeleteConfirmationModal({
 
         <h3 className="text-lg font-bold text-slate-900 mb-1">Hapus File Sekarang?</h3>
         <p className="text-xs text-slate-600 leading-relaxed mb-4">
-          File akan dihapus secara permanen dari Cloudflare R2 storage dan link ini tidak akan bisa dibuka lagi.
+          File akan dihapus secara permanen dari penyimpanan cloud dan link ini tidak akan bisa dibuka lagi.
         </p>
 
         <form onSubmit={handleDelete}>

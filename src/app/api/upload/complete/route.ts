@@ -23,11 +23,13 @@ export async function POST(request: Request) {
       );
     }
 
-    if (blobUrl) {
-      file.r2Key = blobUrl;
+    const activated = await activateFile(fileId, blobUrl);
+    if (!activated) {
+      return NextResponse.json(
+        { error: 'File tidak ditemukan.' },
+        { status: 404 }
+      );
     }
-
-    await activateFile(fileId);
 
     return NextResponse.json({ success: true, fileId });
   } catch (error) {

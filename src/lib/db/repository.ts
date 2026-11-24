@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import { FileRecord, NewFileInput, UploadAuditLogRecord } from './schema';
 import { DeviceAuditRecord } from '../audit/device-logger';
+import { put, head } from '@vercel/blob';
 
 // In-memory data store with global persistence across Next.js dev reloads
 declare global {
@@ -27,6 +28,19 @@ export function hashToken(token: string): string {
 
 export function generateDeleteToken(): string {
   return crypto.randomBytes(24).toString('hex');
+}
+
+async function persistMetadata(id: string, file: FileRecord): Promise<void> {
+  if (process.env.BLOB_READ_WRITE_TOKEN) {
+    try {
+      await put(`metadata/${id}.json`, JSON.stringify(file), {
+        access: 'public',
+        addRandomSuffix: false,
+      });
+    } catch (err) {
+      console.error('Failed to persist metadata to blob:', err);
+    }
+  }
 }
 
 export async function createFileRecord(
@@ -66,24 +80,55 @@ export async function createFileRecord(
 
   store.auditLogs.push(logRecord);
 
+  // Persist metadata to cloud blob so all serverless instances can read it
+  await persistMetadata(input.id, file);
+
   return { file, deleteToken };
 }
 
-export async function activateFile(id: string): Promise<boolean> {
+export async function activateFile(id: string, blobUrl?: string): Promise<boolean> {
   const store = getStore();
-  const file = store.files.get(id);
+  let file = await getFileById(id);
   if (!file) return false;
 
   file.status = 'active';
+  if (blobUrl) {
+    file.r2Key = blobUrl;
+  }
   store.files.set(id, file);
+
+  await persistMetadata(id, file);
   return true;
 }
 
 export async function getFileById(id: string): Promise<FileRecord | null> {
   const store = getStore();
-  const file = store.files.get(id);
-  if (!file) return null;
-  return file;
+  let file = store.files.get(id);
+  if (file) return file;
+
+  // If not found in current serverless container memory, fetch from persistent cloud storage!
+  if (process.env.BLOB_READ_WRITE_TOKEN) {
+    try {
+      const blobMeta = await head(`metadata/${id}.json`);
+      if (blobMeta && blobMeta.url) {
+        const res = await fetch(blobMeta.url, { cache: 'no-store' });
+        if (res.ok) {
+          const data = await res.json();
+          const fetchedFile: FileRecord = {
+            ...data,
+            createdAt: new Date(data.createdAt),
+            expiresAt: new Date(data.expiresAt),
+          };
+          store.files.set(id, fetchedFile);
+          return fetchedFile;
+        }
+      }
+    } catch {
+      // Not found in persistent storage
+    }
+  }
+
+  return null;
 }
 
 export async function deleteFileWithToken(
@@ -91,7 +136,7 @@ export async function deleteFileWithToken(
   deleteToken: string
 ): Promise<{ success: boolean; r2Key?: string; error?: string }> {
   const store = getStore();
-  const file = store.files.get(id);
+  const file = await getFileById(id);
 
   if (!file) {
     return { success: false, error: 'File tidak ditemukan.' };
@@ -104,6 +149,9 @@ export async function deleteFileWithToken(
 
   file.status = 'deleted';
   store.files.set(id, file);
+
+  // Update persistent metadata
+  await persistMetadata(id, file);
 
   return { success: true, r2Key: file.r2Key };
 }

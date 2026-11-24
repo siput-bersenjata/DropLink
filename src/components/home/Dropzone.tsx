@@ -302,7 +302,7 @@ export default function Dropzone() {
             <div className="flex items-center justify-between text-xs font-bold text-slate-700 mb-2">
               <span className="flex items-center gap-1.5 text-blue-600">
                 <Loader2 className="w-4 h-4 animate-spin" />
-                Mengunggah ke Cloudflare R2...
+                Mengunggah file ke cloud storage...
               </span>
               <span>{uploadProgress}%</span>
             </div>
