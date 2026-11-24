@@ -70,6 +70,8 @@ export async function POST(request: Request) {
       600 // 10 minutes
     );
 
+    const useVercelBlob = Boolean(process.env.BLOB_READ_WRITE_TOKEN);
+
     // 8. Create Pending Record in DB
     const { file, deleteToken } = await createFileRecord(
       {
@@ -90,6 +92,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       fileId: file.id,
       presignedUrl,
+      useVercelBlob,
       deleteToken,
       publicUrl,
       expiresAt: file.expiresAt,

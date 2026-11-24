@@ -5,6 +5,7 @@ import {
   GetObjectCommand,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { del } from '@vercel/blob';
 
 const R2_ACCOUNT_ID = process.env.R2_ACCOUNT_ID || '';
 const R2_ACCESS_KEY_ID = process.env.R2_ACCESS_KEY_ID || '';
@@ -14,6 +15,10 @@ const R2_PUBLIC_DOMAIN = process.env.R2_PUBLIC_DOMAIN || '';
 
 export function isR2Configured(): boolean {
   return Boolean(R2_ACCOUNT_ID && R2_ACCESS_KEY_ID && R2_SECRET_ACCESS_KEY);
+}
+
+export function isVercelBlobConfigured(): boolean {
+  return Boolean(process.env.BLOB_READ_WRITE_TOKEN);
 }
 
 let s3ClientInstance: S3Client | null = null;
@@ -69,7 +74,18 @@ export async function generatePresignedDownloadUrl(
   return getSignedUrl(client, command, { expiresIn: expiresInSeconds });
 }
 
-export async function deleteObjectFromR2(key: string): Promise<boolean> {
+export async function deleteObjectFromR2(keyOrUrl: string): Promise<boolean> {
+  // If it's a Vercel Blob URL
+  if (keyOrUrl.startsWith('http://') || keyOrUrl.startsWith('https://')) {
+    try {
+      await del(keyOrUrl);
+      return true;
+    } catch (error) {
+      console.error('Error deleting from Vercel Blob:', error);
+      return false;
+    }
+  }
+
   if (!isR2Configured()) {
     return true;
   }
@@ -78,7 +94,7 @@ export async function deleteObjectFromR2(key: string): Promise<boolean> {
     const client = getR2Client();
     const command = new DeleteObjectCommand({
       Bucket: R2_BUCKET_NAME,
-      Key: key,
+      Key: keyOrUrl,
     });
     await client.send(command);
     return true;
@@ -89,6 +105,11 @@ export async function deleteObjectFromR2(key: string): Promise<boolean> {
 }
 
 export function getPublicDownloadUrl(key: string, filename?: string): string {
+  // If already full public URL (like Vercel Blob)
+  if (key.startsWith('http://') || key.startsWith('https://')) {
+    return key;
+  }
+
   if (R2_PUBLIC_DOMAIN) {
     const base = R2_PUBLIC_DOMAIN.endsWith('/')
       ? R2_PUBLIC_DOMAIN.slice(0, -1)

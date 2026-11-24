@@ -3,6 +3,7 @@
 import React, { useState, useRef, useCallback } from 'react';
 import { UploadCloud, File, AlertCircle, Loader2 } from 'lucide-react';
 import { Turnstile } from '@marsidev/react-turnstile';
+import { upload as vercelBlobUpload } from '@vercel/blob/client';
 import { validateFile, formatBytes, RetentionMonths } from '@/lib/validation/file-validator';
 import RetentionSelector from './RetentionSelector';
 import SuccessCard from './SuccessCard';
@@ -118,44 +119,58 @@ export default function Dropzone() {
         throw new Error(errData.error || 'Gagal memulai proses upload.');
       }
 
-      const { fileId, presignedUrl, deleteToken, publicUrl, expiresAt, category } =
+      const { fileId, presignedUrl, deleteToken, publicUrl, expiresAt, category, useVercelBlob } =
         await presignRes.json();
 
-      // 2. Direct PUT upload to Cloudflare R2 via XMLHttpRequest to track progress
-      await new Promise<void>((resolve, reject) => {
-        const xhr = new XMLHttpRequest();
+      let finalBlobUrl: string | undefined = undefined;
 
-        xhr.upload.onprogress = (event) => {
-          if (event.lengthComputable) {
-            const percent = Math.round((event.loaded / event.total) * 100);
-            setUploadProgress(percent);
-          }
-        };
+      if (useVercelBlob) {
+        // Direct upload to Vercel Blob with progress
+        const blob = await vercelBlobUpload(`uploads/${fileId}/${file.name}`, file, {
+          access: 'public',
+          handleUploadUrl: '/api/upload/blob',
+          onUploadProgress: (progress) => {
+            setUploadProgress(progress.percentage);
+          },
+        });
+        finalBlobUrl = blob.url;
+      } else {
+        // 2. Direct PUT upload to Cloudflare R2 via XMLHttpRequest to track progress
+        await new Promise<void>((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
 
-        xhr.onload = () => {
-          if (xhr.status >= 200 && xhr.status < 300) {
-            resolve();
-          } else {
-            reject(
-              new Error(`Upload langsung ke storage gagal (Status: ${xhr.status}).`)
-            );
-          }
-        };
+          xhr.upload.onprogress = (event) => {
+            if (event.lengthComputable) {
+              const percent = Math.round((event.loaded / event.total) * 100);
+              setUploadProgress(percent);
+            }
+          };
 
-        xhr.onerror = () => {
-          reject(new Error('Koneksi jaringan terputus saat mengunggah file.'));
-        };
+          xhr.onload = () => {
+            if (xhr.status >= 200 && xhr.status < 300) {
+              resolve();
+            } else {
+              reject(
+                new Error(`Upload langsung ke storage gagal (Status: ${xhr.status}).`)
+              );
+            }
+          };
 
-        xhr.open('PUT', presignedUrl);
-        xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
-        xhr.send(file);
-      });
+          xhr.onerror = () => {
+            reject(new Error('Koneksi jaringan terputus saat mengunggah file.'));
+          };
+
+          xhr.open('PUT', presignedUrl);
+          xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
+          xhr.send(file);
+        });
+      }
 
       // 3. Mark file upload complete in API
       const completeRes = await fetch('/api/upload/complete', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fileId }),
+        body: JSON.stringify({ fileId, blobUrl: finalBlobUrl }),
       });
 
       if (!completeRes.ok) {

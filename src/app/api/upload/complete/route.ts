@@ -6,7 +6,7 @@ export const dynamic = 'force-dynamic';
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { fileId } = body;
+    const { fileId, blobUrl } = body;
 
     if (!fileId) {
       return NextResponse.json(
@@ -21,6 +21,10 @@ export async function POST(request: Request) {
         { error: 'File tidak ditemukan.' },
         { status: 404 }
       );
+    }
+
+    if (blobUrl) {
+      file.r2Key = blobUrl;
     }
 
     await activateFile(fileId);
